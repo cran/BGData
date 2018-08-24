@@ -2,9 +2,9 @@ library(parallel)
 
 context("utils")
 
-# Create dummy path
-testPath <- paste0(tempdir(), "/BGData-", BGData:::randomString(), "/")
-dir.create(testPath)
+testDir <- function() {
+    paste0(tempdir(), "/BGData-", BGData:::randomString(), "/")
+}
 
 hasCores <- function(numCores) {
     # For CRAN
@@ -17,13 +17,6 @@ hasCores <- function(numCores) {
     }
 }
 
-test_that("chunkedApply fails if nTasks is illegal", {
-    X <- matrix(data = 1, nrow = 1, ncol = 1)
-    for (nTasks in c(0, -1, "a")) {
-        expect_error(suppressWarnings(chunkedApply(X = X, MARGIN = 1, FUN = sum, nTasks = nTasks)))
-    }
-})
-
 for (nCores in seq_len(2)) {
 
     test_that(paste("chunkedApply", "on", nCores, "cores"), {
@@ -32,56 +25,11 @@ for (nCores in seq_len(2)) {
 
         X <- matrix(data = rnorm(50), nrow = 5, ncol = 10)
 
-        for (bufferSize in c(5, 10)) {
-            for (nTasks in c(1, 3)) {
-                expect_equal(chunkedApply(X = X, MARGIN = 1, FUN = sum, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), rowSums(X))
-                expect_equal(chunkedApply(X = X, MARGIN = 2, FUN = sum, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), colSums(X))
-                expect_equal(chunkedApply(X = X, MARGIN = 1, FUN = sum, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), apply(X, 1, sum))
-                expect_equal(chunkedApply(X = X, MARGIN = 2, FUN = sum, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), apply(X, 2, sum))
-            }
-        }
-
-    })
-
-    test_that(paste("crossprod_parallel", "on", nCores, "cores"), {
-
-        hasCores(nCores)
-
-        W <- matrix(data = rnorm(200), nrow = 10, ncol = 20)
-        Z <- matrix(data = rnorm(20), nrow = 10, ncol = 2)
-
-        # Testing X'X
-        TMP <- crossprod(W)
-        for (nTasks in c(1, 3)) {
-            expect_equal(crossprod_parallel(x = W, nTasks = nTasks, nCores = nCores), TMP)
-        }
-
-        # Testing X'y
-        TMP <- crossprod(W, y = Z)
-        for (nTasks in c(1, 3)) {
-            expect_equal(crossprod_parallel(x = W, y = Z, nTasks = nTasks, nCores = nCores), TMP)
-        }
-
-    })
-
-
-    test_that(paste("tcrossprod_parallel", "on", nCores, "cores"), {
-
-        hasCores(nCores)
-
-        W <- matrix(data = rnorm(200), nrow = 10, ncol = 20)
-        Z <- matrix(data = rnorm(100), nrow = 5, ncol = 20)
-
-        # Testing XX'
-        TMP <- tcrossprod(W)
-        for (nTasks in c(1, 3)) {
-            expect_equal(tcrossprod_parallel(x = W, nTasks = nTasks, nCores = nCores), TMP)
-        }
-
-        # Testing XY'
-        TMP <- tcrossprod(W, y = Z)
-        for (nTasks in c(1, 3)) {
-            expect_equal(tcrossprod_parallel(x = W, y = Z, nTasks = nTasks, nCores = nCores), TMP)
+        for (chunkSize in c(5, 10)) {
+            expect_equal(chunkedApply(X = X, MARGIN = 1, FUN = sum, chunkSize = chunkSize, nCores = nCores), rowSums(X))
+            expect_equal(chunkedApply(X = X, MARGIN = 2, FUN = sum, chunkSize = chunkSize, nCores = nCores), colSums(X))
+            expect_equal(chunkedApply(X = X, MARGIN = 1, FUN = sum, chunkSize = chunkSize, nCores = nCores), apply(X, 1, sum))
+            expect_equal(chunkedApply(X = X, MARGIN = 2, FUN = sum, chunkSize = chunkSize, nCores = nCores), apply(X, 2, sum))
         }
 
     })
@@ -94,10 +42,8 @@ for (nCores in seq_len(2)) {
         G1 <- tcrossprod(scale(W))
         G1 <- G1 / mean(diag(G1))
 
-        for (nTasks in c(1, 3)) {
-            G2 <- getG_symDMatrix(X = W, blockSize = ceiling(nrow(W) / 3), folder = paste0(testPath, "test-", randomString()), nTasks = nTasks, nCores = nCores)
-            expect_equal(G2[], G1)
-        }
+        G2 <- getG_symDMatrix(X = W, blockSize = ceiling(nrow(W) / 3), folderOut = testDir(), nCores = nCores)
+        expect_equivalent(G2[], G1) # use equivalent to correct slight difference in NULL dimnames handling
 
     })
 
@@ -109,38 +55,36 @@ for (nCores in seq_len(2)) {
         p <- 100
         X <- matrix(data = rnorm(n * p), nrow = n, ncol = p)
 
-        for (bufferSize in c(NULL, p, ceiling(p / 3))) {
-            for (nTasks in c(1, 3)) {
+        for (chunkSize in c(NULL, p, ceiling(p / 3))) {
 
-                # both scalings
-                G <- tcrossprod(scale(X))
-                G <- G / mean(diag(G))
-                G2 <- getG(X = X, scale = TRUE, scaleG = TRUE, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G, G2, check.attributes = FALSE)
+            # both scalings
+            G <- tcrossprod(scale(X))
+            G <- G / mean(diag(G))
+            G2 <- getG(X = X, scale = TRUE, scaleG = TRUE, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G, G2, check.attributes = FALSE)
 
-                # without scaling to average diagonal = 1 (scaleG)
-                G <- tcrossprod(scale(X))
-                G2 <- getG(X = X, scale = TRUE, scaleG = FALSE, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G, G2, check.attributes = FALSE)
+            # without scaling to average diagonal = 1 (scaleG)
+            G <- tcrossprod(scale(X))
+            G2 <- getG(X = X, scale = TRUE, scaleG = FALSE, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G, G2, check.attributes = FALSE)
 
-                # without scaling columns, but scaling average diagonal = 1 (scaleG)
-                G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
-                G <- G / mean(diag(G))
-                G2 <- getG(X = X, scale = FALSE, scaleG = TRUE, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
+            # without scaling columns, but scaling average diagonal = 1 (scaleG)
+            G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
+            G <- G / mean(diag(G))
+            G2 <- getG(X = X, scale = FALSE, scaleG = TRUE, chunkSize = chunkSize, nCores = nCores)
 
-                expect_equal(G, G2, check.attributes = FALSE)
+            expect_equal(G, G2, check.attributes = FALSE)
 
-                # no scaling at all
-                G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
-                G2 <- getG(X = X, scale = FALSE, scaleG = FALSE, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G, G2, check.attributes = FALSE)
+            # no scaling at all
+            G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
+            G2 <- getG(X = X, scale = FALSE, scaleG = FALSE, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G, G2, check.attributes = FALSE)
 
-                # neither scaling nor centering
-                G <- tcrossprod(X)
-                G2 <- getG(X = X, center = FALSE, scale = FALSE, scaleG = FALSE, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G, G2, check.attributes = FALSE)
+            # neither scaling nor centering
+            G <- tcrossprod(X)
+            G2 <- getG(X = X, center = FALSE, scale = FALSE, scaleG = FALSE, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G, G2, check.attributes = FALSE)
 
-            }
         }
 
         X[sample(1:length(X), size = 20)] <- NA
@@ -158,52 +102,50 @@ for (nCores in seq_len(2)) {
         p <- 100
         X <- matrix(data = rnorm(n * p), nrow = n, ncol = p)
 
-        for (bufferSize in c(NULL, p, ceiling(p / 3))) {
-            for (nTasks in c(1, 3)) {
+        for (chunkSize in c(NULL, p, ceiling(p / 3))) {
 
-                i <- sample(1:nrow(X), size = 3)
-                i2 <- sample(1:nrow(X), size = 4)
+            i <- sample(1:nrow(X), size = 3)
+            i2 <- sample(1:nrow(X), size = 4)
 
-                centers <- colMeans(X)
-                scales <- apply(X, 2, sd) * sqrt((n - 1)/n)
+            centers <- colMeans(X)
+            scales <- apply(X, 2, sd) * sqrt((n - 1)/n)
 
-                # all scalings
-                G <- tcrossprod(scale(X))
-                G <- G / mean(diag(G))
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i2, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i2], G_12, check.attributes = FALSE)
+            # all scalings
+            G <- tcrossprod(scale(X))
+            G <- G / mean(diag(G))
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i2, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i2], G_12, check.attributes = FALSE)
 
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i], G_12, check.attributes = FALSE)
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i], G_12, check.attributes = FALSE)
 
-                # without scaling to average diagonal = 1
-                G <- tcrossprod(scale(X) * sqrt(n/(n - 1)))
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i2, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i2], G_12, check.attributes = FALSE)
+            # without scaling to average diagonal = 1
+            G <- tcrossprod(scale(X) * sqrt(n/(n - 1)))
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i2, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i2], G_12, check.attributes = FALSE)
 
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i], G_12, check.attributes = FALSE)
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i], G_12, check.attributes = FALSE)
 
-                # without scaling columns, but scaling average diagonal = 1
-                scales <- rep(1, ncol(X))
+            # without scaling columns, but scaling average diagonal = 1
+            scales <- rep(1, ncol(X))
 
-                G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
-                G <- G / ncol(X)
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i2, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i2], G_12, check.attributes = FALSE)
+            G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
+            G <- G / ncol(X)
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i2, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i2], G_12, check.attributes = FALSE)
 
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i], G_12, check.attributes = FALSE)
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = TRUE, i = i, i2 = i, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i], G_12, check.attributes = FALSE)
 
-                # no scaling at all
-                G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i2, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i2], G_12, check.attributes = FALSE)
+            # no scaling at all
+            G <- tcrossprod(scale(X, center = TRUE, scale = FALSE))
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i2, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i2], G_12, check.attributes = FALSE)
 
-                G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(G[i, i], G_12, check.attributes = FALSE)
+            G_12 <- getG(X = X, center = centers, scale = scales, scaleG = FALSE, i = i, i2 = i, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(G[i, i], G_12, check.attributes = FALSE)
 
-            }
         }
     })
 
@@ -220,7 +162,7 @@ for (nCores in seq_len(2)) {
                 allele_freq = vector(mode = "double", length = length(j)),
                 sd = vector(mode = "double", length = length(j))
             )
-            for (col in seq_len(length(j))) {
+            for (col in seq_along(j)) {
                 Z <- genotypes[i, j[col]]
                 NAs <- sum(is.na(Z))
                 dummy$freq_na[col] <- NAs / length(Z)
@@ -230,14 +172,12 @@ for (nCores in seq_len(2)) {
             return(dummy)
         }
 
-        for (bufferSize in c(3, 6)) {
-            for (nTasks in c(1, 3)) {
-                expect_equal(summarize(X = genotypes, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), computeDummy())
-                expect_equal(summarize(X = genotypes, i = c(1, 3), bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), computeDummy(i = c(1, 3)))
-                expect_equal(summarize(X = genotypes, j = c(1, 3, 5), bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), computeDummy(j =  c(1, 3, 5)))
-                expect_equal(summarize(X = genotypes, i = c(1, 3), j = c(1, 3, 5), bufferSize = bufferSize, nTasks = nTasks, nCores = nCores), computeDummy(i = c(1, 3), j = c(1, 3, 5)))
-                expect_equal(summarize(X = genotypes, nCores = nCores), computeDummy())
-            }
+        for (chunkSize in c(3, 6)) {
+            expect_equal(summarize(X = genotypes, chunkSize = chunkSize, nCores = nCores), computeDummy())
+            expect_equal(summarize(X = genotypes, i = c(1, 3), chunkSize = chunkSize, nCores = nCores), computeDummy(i = c(1, 3)))
+            expect_equal(summarize(X = genotypes, j = c(1, 3, 5), chunkSize = chunkSize, nCores = nCores), computeDummy(j =  c(1, 3, 5)))
+            expect_equal(summarize(X = genotypes, i = c(1, 3), j = c(1, 3, 5), chunkSize = chunkSize, nCores = nCores), computeDummy(i = c(1, 3), j = c(1, 3, 5)))
+            expect_equal(summarize(X = genotypes, nCores = nCores), computeDummy())
         }
 
     })
@@ -259,11 +199,9 @@ for (nCores in seq_len(2)) {
         }))
         rownames(comp) <- colnames(DATA@geno)
 
-        for (bufferSize in c(3, 6)) {
-            for (nTasks in c(1, 2)) {
-                fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(comp, fm)
-            }
+        for (chunkSize in c(3, 6)) {
+            fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", chunkSize = chunkSize, nCores = nCores)
+            expect_equal(comp, fm)
         }
 
         # With i
@@ -274,11 +212,9 @@ for (nCores in seq_len(2)) {
         }))
         rownames(comp) <- colnames(DATA@geno)
 
-        for (bufferSize in c(3, 6)) {
-            for (nTasks in c(1, 2)) {
-                fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", i = i, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(comp, fm)
-            }
+        for (chunkSize in c(3, 6)) {
+            fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", i = i, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(comp, fm)
         }
 
         # With j
@@ -289,11 +225,9 @@ for (nCores in seq_len(2)) {
         }))
         rownames(comp) <- colnames(DATA@geno)[j]
 
-        for (bufferSize in c(3, 6)) {
-            for (nTasks in c(1, 2)) {
-                fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", j = j, bufferSize = bufferSize, nTasks = nTasks, nCores = nCores)
-                expect_equal(comp, fm)
-            }
+        for (chunkSize in c(3, 6)) {
+            fm <- GWAS(formula = y ~ 1, data = DATA, method = "lsfit", j = j, chunkSize = chunkSize, nCores = nCores)
+            expect_equal(comp, fm)
         }
 
     })

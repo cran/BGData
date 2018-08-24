@@ -111,7 +111,7 @@ pedDims <- function(fileIn, header, n, p, sep = "", nColSkip = 6L) {
 }
 
 
-parseRAW <- function(BGData, fileIn, header, dataType, nColSkip = 6L, idCol = c(1L, 2L), sep = "", na.strings = "NA", verbose = FALSE, ...) {
+parseRAW <- function(BGData, fileIn, header, dataType, nColSkip = 6L, idCol = c(1L, 2L), sep = "", na.strings = "NA", verbose = FALSE) {
 
     p <- ncol(BGData@geno)
     pedFile <- file(fileIn, open = "r")
@@ -124,12 +124,11 @@ parseRAW <- function(BGData, fileIn, header, dataType, nColSkip = 6L, idCol = c(
     }
 
     # Parse file
-    j <- seq_len(p)
     for (i in seq_len(nrow(BGData@geno))) {
         xSkip <- scan(pedFile, n = nColSkip, what = character(), sep = sep, quiet = TRUE)
         x <- scan(pedFile, n = p, what = dataType, sep = sep, na.strings = na.strings, quiet = TRUE)
         BGData@pheno[i, ] <- xSkip
-        BGData@geno <- `[<-`(BGData@geno, i, j, ..., value = x)
+        BGData@geno[i, ] <- x
         if (verbose) {
             message("Subject ", i, " / ", nrow(BGData@geno))
         }
@@ -283,12 +282,6 @@ readRAW <- function(fileIn, header = TRUE, dataType = integer(), n = NULL, p = N
     # Prepare geno
     geno <- LinkedMatrix::LinkedMatrix(nrow = dims$n, ncol = dims$p, nNodes = nNodes, linkedBy = linked.by, nodeInitializer = ffNodeInitializer, vmode = outputType, folderOut = folderOut, dimorder = dimorder)
 
-    # Generate nodes
-    nodes <- LinkedMatrix::nodes(geno)
-
-    # Generate index
-    index <- LinkedMatrix::index(geno)
-
     # Prepare pheno
     pheno <- as.data.frame(matrix(nrow = dims$n, ncol = nColSkip), stringsAsFactors = FALSE)
 
@@ -296,7 +289,7 @@ readRAW <- function(fileIn, header = TRUE, dataType = integer(), n = NULL, p = N
     BGData <- new("BGData", geno = geno, pheno = pheno)
 
     # Parse .raw file
-    BGData <- parseRAW(BGData = BGData, fileIn = fileIn, header = header, dataType = dataType, nColSkip = nColSkip, idCol = idCol, sep = sep, na.strings = na.strings, nodes = nodes, index = index, verbose = verbose)
+    BGData <- parseRAW(BGData = BGData, fileIn = fileIn, header = header, dataType = dataType, nColSkip = nColSkip, idCol = idCol, sep = sep, na.strings = na.strings, verbose = verbose)
 
     # Save BGData object
     attr(BGData, "origFile") <- list(path = fileIn, dataType = typeof(dataType))
@@ -412,6 +405,7 @@ generatePheno <- function(x) {
         splits <- strsplit(rownames(x), "_")
         pheno <- data.frame(FID = sapply(splits, "[", 1L), IID = sapply(splits, "[", 2L), stringsAsFactors = FALSE)
     }
+    rownames(pheno) <- rownames(x)
     return(pheno)
 }
 
@@ -463,6 +457,7 @@ generateMap <- function(x) {
             stringsAsFactors = FALSE
         )
     }
+    rownames(map) <- colnames(x)
     return(map)
 }
 
@@ -488,17 +483,32 @@ loadAlternatePhenotypeFile <- function(path, ...) {
 }
 
 
-mergeAlternatePhenotypes <- function(pheno, alternatePhenotypes) {
+#' Merge Two Data Frames Keeping the Order of the First
+#'
+#' This is a simplified version of [base::merge()] useful for merging
+#' additional data into a [BGData-class] object while keeping the order of the
+#' data in the [BGData-class] object.
+#'
+#' @param x Data frame
+#' @param y Data frame
+#' @param by Specifications of the columns used for merging. Defaults to the
+#' first two columns of the data frame, which traditionally has the family ID
+#' and the individual ID.
+#' @return Merged data frame
+#' @export
+orderedMerge <- function(x, y, by = c(1L, 2L)) {
     # Add artificial sort column to preserve order after merging
     # (merge's `sort = FALSE` order is unspecified)
-    pheno$.sortColumn <- seq_len(nrow(pheno))
+    x$.sortColumn <- seq_len(nrow(x))
     # Merge phenotypes and alternate phenotypes
-    pheno <- merge(pheno, alternatePhenotypes, by = c(1L, 2L), all.x = TRUE)
+    merged <- merge(x, y, by = by, all.x = TRUE)
     # Reorder phenotypes to match original order and delete artificial
     # column
-    pheno <- pheno[order(pheno$.sortColumn), ]
-    pheno <- pheno[, names(pheno) != ".sortColumn"]
-    return(pheno)
+    merged <- merged[order(merged$.sortColumn), ]
+    merged <- merged[, names(merged) != ".sortColumn"]
+    # Restore rownames (assuming order is retained and no rows disappear...)
+    rownames(merged) <- rownames(x)
+    return(merged)
 }
 
 
@@ -514,7 +524,8 @@ mergeAlternatePhenotypes <- function(pheno, alternatePhenotypes) {
 #' phenotypes are required it is possible to store them in an [alternate
 #' phenotype file](https://www.cog-genomics.org/plink2/input#pheno). The path
 #' to such a file can be provided with `alternatePhenotypeFile` and will be
-#' merged with the data in the `@@pheno` slot.
+#' merged with the data in the `@@pheno` slot. The first and second columns of
+#' that file must contain family and within-family IDs, respectively.
 #'
 #' For [BEDMatrix::BEDMatrix-class] objects: If a .fam file (which corresponds
 #' to the first six columns of a .ped or .raw file) of the same name and in the
@@ -556,7 +567,7 @@ as.BGData.BEDMatrix <- function(x, alternatePhenotypeFile = NULL, ...) {
     # Load and merge alternate phenotype file
     if (!is.null(alternatePhenotypeFile)) {
         alternatePhenotypes <- loadAlternatePhenotypeFile(alternatePhenotypeFile, ...)
-        fam <- mergeAlternatePhenotypes(fam, alternatePhenotypes)
+        fam <- orderedMerge(fam, alternatePhenotypes)
     }
     BGData(geno = x, pheno = fam, map = map)
 }
@@ -575,13 +586,13 @@ as.BGData.ColumnLinkedMatrix <- function(x, alternatePhenotypeFile = NULL, ...) 
     fam <- suppressMessages(generatePheno(x[[1L]]))
     # Read in map files
     message("Extracting map from .bim files...")
-    map <- do.call("rbind", lapply(x, function(node) {
+    map <- do.call(base::rbind, lapply(x, function(node) {
         suppressMessages(generateMap(node))
     }))
     # Load and merge alternate phenotype file
     if (!is.null(alternatePhenotypeFile)) {
         alternatePhenotypes <- loadAlternatePhenotypeFile(alternatePhenotypeFile, ...)
-        fam <- mergeAlternatePhenotypes(fam, alternatePhenotypes)
+        fam <- orderedMerge(fam, alternatePhenotypes)
     }
     BGData(geno = x, pheno = fam, map = map)
 }
@@ -597,7 +608,7 @@ as.BGData.RowLinkedMatrix <- function(x, alternatePhenotypeFile = NULL, ...) {
     }
     # Read in the fam files
     message("Extracting phenotypes from .fam files...")
-    fam <- do.call("rbind", lapply(x, function(node) {
+    fam <- do.call(base::rbind, lapply(x, function(node) {
         suppressMessages(generatePheno(node))
     }))
     # Read in the map file of the first node
@@ -606,7 +617,7 @@ as.BGData.RowLinkedMatrix <- function(x, alternatePhenotypeFile = NULL, ...) {
     # Load and merge alternate phenotype file
     if (!is.null(alternatePhenotypeFile)) {
         alternatePhenotypes <- loadAlternatePhenotypeFile(alternatePhenotypeFile, ...)
-        fam <- mergeAlternatePhenotypes(fam, alternatePhenotypes)
+        fam <- orderedMerge(fam, alternatePhenotypes)
     }
     BGData(geno = x, pheno = fam, map = map)
 }

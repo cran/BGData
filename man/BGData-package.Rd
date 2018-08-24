@@ -14,11 +14,11 @@ the R environment.
 \details{
 We have identified several approaches to tackle those challenges within R:
 \itemize{
-\item Memory mapping: The data is stored in on the hard drive and users can read
-in smaller chunks when they are needed.
-\item Linked arrays: For very large datasets a single memory-mapped array may
-not be enough or convenient. A linked array is an array whose content is
-distributed over multiple memory-mapped nodes.
+\item File-backed matrices: The data is stored in on the hard drive and users
+can read in smaller chunks when they are needed.
+\item Linked arrays: For very large datasets a single file-backed array may not
+be enough or convenient. A linked array is an array whose content is
+distributed over multiple file-backed nodes.
 \item Multiple dispatch: Methods are presented to users so that they can treat
 these arrays pretty much as if they were RAM arrays.
 \item Multi-level parallelism: Exploit multi-core and multi-node computing.
@@ -36,54 +36,51 @@ matrix). It also contains a data structure called \code{BGData} that holds
 genotypes in the \code{@geno} slot, phenotypes in the \code{@pheno} slot, and
 additional information in the \code{@map} slot.
 }
-\section{Memory-mapping}{
+\section{File-backed matrices}{
 
-Functions with the \code{bufferSize} parameter work best with memory-mapped
-matrices such as \link[BEDMatrix:BEDMatrix-class]{BEDMatrix::BEDMatrix} objects. To avoid loading the
-whole, potentially very large matrix into memory, these functions will load
-chunks of the memory-mapped matrix into memory and perform the operations on
-one chunk at a time. The size of the chunks is determined by the
-\code{bufferSize} parameter. Care must be taken to not set \code{bufferSize} too high
-to avoid memory shortage, particularly when combined with parallel
-computing.
+Functions with the \code{chunkSize} parameter work best with file-backed matrices
+such as \link[BEDMatrix:BEDMatrix-class]{BEDMatrix::BEDMatrix} objects. To avoid loading the whole,
+potentially very large matrix into memory, these functions will load chunks
+of the file-backed matrix into memory and perform the operations on one
+chunk at a time. The size of the chunks is determined by the \code{chunkSize}
+parameter. Care must be taken to not set \code{chunkSize} too high to avoid
+memory shortage, particularly when combined with parallel computing.
 }
 
 \section{Multi-level parallelism}{
 
-Functions with the \code{nCores}, \code{nTasks}, \code{i}, and \code{j} parameters provide
+Functions with the \code{nCores}, \code{i}, and \code{j} parameters provide
 capabilities for both parallel and distributed computing.
 
 For parallel computing, \code{nCores} determines the number of cores the code is
-run on, and \code{nTasks} determines into how many tasks the problem is divided
-into. \code{nTasks} should be at least as high as \code{nCores} to keep all cores
-busy. Memory usage can be an issue for higher values of \code{nCores} and
-\code{nTasks} as R is not particularly memory-efficient. As a rule of thumb, at
-least around \code{object_size(X) + (nCores * (object_size(X) / nTasks)) + object_size(result)} MB of total memory will be needed for operations on
-memory-mapped matrices, not including potential copies of your data that
-might be created (for example \code{\link[stats:lsfit]{stats::lsfit()}} runs \code{cbind(1, X)}). \code{i} and
-\code{j} can be used to include or exclude certain rows or columns. Internally,
-the \code{\link[parallel:mclapply]{parallel::mclapply()}} function is used and therefore parallel computing
-will not work on Windows machines.
+run on. Memory usage can be an issue for higher values of \code{nCores} as R is
+not particularly memory-efficient. As a rule of thumb, at least around
+\code{(nCores * object_size(chunk)) + object_size(result)} MB of total memory
+will be needed for operations on file-backed matrices, not including
+potential copies of your data that might be created (for example
+\code{\link[stats:lsfit]{stats::lsfit()}} runs \code{cbind(1, X)}). \code{i} and \code{j} can be used to include or
+exclude certain rows or columns. Internally, the \code{\link[parallel:mclapply]{parallel::mclapply()}}
+function is used and therefore parallel computing will not work on Windows
+machines.
 
 For distributed computing, \code{i} and \code{j} determine the subset of the input
 matrix that the code runs on. In an HPC environment, this can be used not
 just to include or exclude certain rows or columns, but also to partition
 the task among many nodes rather than cores. Scheduler-specific code and
 code to aggregate the results need to be written by the user. It is
-recommended to set \code{nCores} and \code{nTasks} to \code{1} as nodes are often cheaper
-than cores.
+recommended to set \code{nCores} to \code{1} as nodes are often cheaper than cores.
 }
 
 \section{Example dataset}{
 
 The \code{extdata} folder contains example files that were generated from the
-250k SNP and phenotype data in \href{http://www.nature.com/nature/journal/v465/n7298/full/nature08800.html}{Atwell et al.(2010)}.
+250k SNP and phenotype data in \href{http://www.nature.com/nature/journal/v465/n7298/full/nature08800.html}{Atwell et al. (2010)}.
 Only the first 300 SNPs of chromosome 1, 2, and 3 were included to keep the
 size of the example dataset small.
 \href{https://www.cog-genomics.org/plink2}{PLINK} was used to convert the data to
 \href{https://www.cog-genomics.org/plink2/input#bed}{.bed} and
 \href{https://www.cog-genomics.org/plink2/input#raw}{.raw} files. \code{FT10} has been
-chosen as a phenotype and is provided as an \href{https://www.cog-genomics.org/plink2/input#pheno}{alternate phenotypefile}. The file is
+chosen as a phenotype and is provided as an \href{https://www.cog-genomics.org/plink2/input#pheno}{alternate phenotype file}. The file is
 intentionally shuffled to demonstrate that the additional phenotypes are put
 in the same order as the rest of the phenotypes.
 }

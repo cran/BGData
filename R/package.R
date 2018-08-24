@@ -7,11 +7,11 @@
 #' the R environment.
 #'
 #' We have identified several approaches to tackle those challenges within R:
-#' - Memory mapping: The data is stored in on the hard drive and users can read
-#' in smaller chunks when they are needed.
-#' - Linked arrays: For very large datasets a single memory-mapped array may
-#' not be enough or convenient. A linked array is an array whose content is
-#' distributed over multiple memory-mapped nodes.
+#' - File-backed matrices: The data is stored in on the hard drive and users
+#' can read in smaller chunks when they are needed.
+#' - Linked arrays: For very large datasets a single file-backed array may not
+#' be enough or convenient. A linked array is an array whose content is
+#' distributed over multiple file-backed nodes.
 #' - Multiple dispatch: Methods are presented to users so that they can treat
 #' these arrays pretty much as if they were RAM arrays.
 #' - Multi-level parallelism: Exploit multi-core and multi-node computing.
@@ -28,40 +28,36 @@
 #' genotypes in the `@@geno` slot, phenotypes in the `@@pheno` slot, and
 #' additional information in the `@@map` slot.
 #'
-#' @section Memory-mapping:
-#' Functions with the `bufferSize` parameter work best with memory-mapped
-#' matrices such as [BEDMatrix::BEDMatrix-class] objects. To avoid loading the
-#' whole, potentially very large matrix into memory, these functions will load
-#' chunks of the memory-mapped matrix into memory and perform the operations on
-#' one chunk at a time. The size of the chunks is determined by the
-#' `bufferSize` parameter. Care must be taken to not set `bufferSize` too high
-#' to avoid memory shortage, particularly when combined with parallel
-#' computing.
+#' @section File-backed matrices:
+#' Functions with the `chunkSize` parameter work best with file-backed matrices
+#' such as [BEDMatrix::BEDMatrix-class] objects. To avoid loading the whole,
+#' potentially very large matrix into memory, these functions will load chunks
+#' of the file-backed matrix into memory and perform the operations on one
+#' chunk at a time. The size of the chunks is determined by the `chunkSize`
+#' parameter. Care must be taken to not set `chunkSize` too high to avoid
+#' memory shortage, particularly when combined with parallel computing.
 #'
 #' @section Multi-level parallelism:
-#' Functions with the `nCores`, `nTasks`, `i`, and `j` parameters provide
+#' Functions with the `nCores`, `i`, and `j` parameters provide
 #' capabilities for both parallel and distributed computing.
 #'
 #' For parallel computing, `nCores` determines the number of cores the code is
-#' run on, and `nTasks` determines into how many tasks the problem is divided
-#' into. `nTasks` should be at least as high as `nCores` to keep all cores
-#' busy. Memory usage can be an issue for higher values of `nCores` and
-#' `nTasks` as R is not particularly memory-efficient. As a rule of thumb, at
-#' least around `object_size(X) + (nCores * (object_size(X) / nTasks)) +
-#' object_size(result)` MB of total memory will be needed for operations on
-#' memory-mapped matrices, not including potential copies of your data that
-#' might be created (for example [stats::lsfit()] runs `cbind(1, X)`). `i` and
-#' `j` can be used to include or exclude certain rows or columns. Internally,
-#' the [parallel::mclapply()] function is used and therefore parallel computing
-#' will not work on Windows machines.
+#' run on. Memory usage can be an issue for higher values of `nCores` as R is
+#' not particularly memory-efficient. As a rule of thumb, at least around
+#' `(nCores * object_size(chunk)) + object_size(result)` MB of total memory
+#' will be needed for operations on file-backed matrices, not including
+#' potential copies of your data that might be created (for example
+#' [stats::lsfit()] runs `cbind(1, X)`). `i` and `j` can be used to include or
+#' exclude certain rows or columns. Internally, the [parallel::mclapply()]
+#' function is used and therefore parallel computing will not work on Windows
+#' machines.
 #'
 #' For distributed computing, `i` and `j` determine the subset of the input
 #' matrix that the code runs on. In an HPC environment, this can be used not
 #' just to include or exclude certain rows or columns, but also to partition
 #' the task among many nodes rather than cores. Scheduler-specific code and
 #' code to aggregate the results need to be written by the user. It is
-#' recommended to set `nCores` and `nTasks` to `1` as nodes are often cheaper
-#' than cores.
+#' recommended to set `nCores` to `1` as nodes are often cheaper than cores.
 #'
 #' @section Example dataset:
 #' The `extdata` folder contains example files that were generated from the
