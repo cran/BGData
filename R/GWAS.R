@@ -12,8 +12,9 @@
 #' formula must be in the `@@pheno` object of the [BGData-class].
 #' @param data A [BGData-class] object.
 #' @param method The regression method to be used. Currently, the following
-#' methods are implemented: [stats::lm()], [stats::lm.fit()], [stats::lsfit()],
-#' [stats::glm()], [lme4::lmer()], and [SKAT::SKAT()]. Defaults to `lsfit`.
+#' methods are implemented: `rayOLS`, [stats::lsfit()], [stats::lm()],
+#' [stats::lm.fit()], [stats::glm()], [lme4::lmer()], and [SKAT::SKAT()].
+#' Defaults to `lsfit`.
 #' @param i Indicates which rows of `@@geno` should be used. Can be integer,
 #' boolean, or character. By default, all rows are used.
 #' @param j Indicates which columns of `@@geno` should be used. Can be integer,
@@ -34,21 +35,24 @@ GWAS <- function(formula, data, method = "lsfit", i = seq_len(nrow(data@geno)), 
         stop("data must BGData")
     }
 
-    if (!method %in% c("lm", "lm.fit", "lsfit", "glm", "lmer", "SKAT", "rayOLS")) {
-        stop("Only lm, lm.fit, lsfit, glm, lmer, SKAT, and rayOLS have been implemented so far.")
+    if (!method %in% c("rayOLS", "lsfit", "lm", "lm.fit", "glm", "lmer", "SKAT")) {
+        stop("Only rayOLS, lsfit, lm, lm.fit, glm, lmer, and SKAT have been implemented so far.")
     }
 
     i <- crochet::convertIndex(data@geno, i, "i")
     j <- crochet::convertIndex(data@geno, j, "j")
 
-    if (method == "lsfit") {
-        OUT <- GWAS.lsfit(formula = formula, data = data, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
-    } else if (method == "rayOLS") {
-        if (length(attr(stats::terms(formula), "term.labels")) > 0L) {
+    if (method == "rayOLS") {
+        if (length(labels(stats::terms(formula))) > 0L) {
             stop("method rayOLS can only be used with y~1 formula, if you want to add covariates pre-adjust your phenotype.")
         }
         OUT <- GWAS.rayOLS(formula = formula, data = data, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
+    } else if (method == "lsfit") {
+        OUT <- GWAS.lsfit(formula = formula, data = data, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
     } else if (method == "SKAT") {
+        if (!requireNamespace("SKAT", quietly = TRUE)) {
+            stop("SKAT needed for this function to work. Please install it.", call. = FALSE)
+        }
         OUT <- GWAS.SKAT(formula = formula, data = data, i = i, j = j, verbose = verbose, ...)
     } else {
         if (method == "lmer") {
@@ -59,50 +63,47 @@ GWAS <- function(formula, data, method = "lsfit", i = seq_len(nrow(data@geno)), 
         } else {
             FUN <- match.fun(method)
         }
-        pheno <- data@pheno
-        GWAS.model <- stats::update(stats::as.formula(formula), ".~z+.")
+        GWAS.model <- stats::update(formula, ".~z+.")
         OUT <- chunkedApply(X = data@geno, MARGIN = 2L, FUN = function(col, ...) {
-            pheno$z <- col
-            fm <- FUN(GWAS.model, data = pheno, ...)
+            df <- data@pheno[i, , drop = FALSE]
+            df$z <- col
+            fm <- FUN(GWAS.model, data = df, ...)
             getCoefficients(fm)
         }, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
-        colnames(OUT) <- colnames(data@geno)[j]
         OUT <- t(OUT)
+        rownames(OUT) <- colnames(data@geno)[j]
     }
 
     return(OUT)
 }
 
 
-# the GWAS method for rayOLS
 GWAS.rayOLS <- function(formula, data, i = seq_len(nrow(data@geno)), j = seq_len(ncol(data@geno)), chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE, ...) {
-    y <- data@pheno[i, as.character(stats::terms(formula)[[2L]]), drop = TRUE]
-    y <- y - mean(y, na.rm = TRUE)
-    n <- length(y)
-    Int <- rep(1, n)
-    SSy <- sum(y^2, na.rm = TRUE)
-    isNAY <- which(is.na(y))
-    res <- chunkedApply(X = data@geno, MARGIN = 2L, FUN = rayOLS, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, y = y, Int = Int, SSy = SSy, n = n, isNAY = isNAY, ...)
-    return(t(res))
+    y <- data@pheno[i, getResponse(formula)]
+    y <- as.numeric(y)
+    res <- chunkedMap(X = data@geno, FUN = rayOLS, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, y = y, ...)
+    res <- do.call(rbind, res)
+    colnames(res) <- c("Estimate", "Std.Err", "t-value", "Pr(>|t|)")
+    rownames(res) <- colnames(data@geno)[j]
+    return(res)
 }
 
 
 GWAS.lsfit <- function(formula, data, i = seq_len(nrow(data@geno)), j = seq_len(ncol(data@geno)), chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE, ...) {
 
-    # subset of model.frame has bizarre scoping issues
-    frame <- stats::model.frame(formula = formula, data = data@pheno)[i, , drop = FALSE]
+    # The subset argument of model.frame is evaluated in the environment of the
+    # formula, therefore subset after building the frame.
+    frame <- stats::model.frame(formula = formula, data = data@pheno, na.action = stats::na.pass)[i, , drop = FALSE]
     model <- stats::model.matrix(formula, frame)
-    model <- cbind(1L, model) # Reserve space for marker column
 
-    y <- data@pheno[i, as.character(stats::terms(formula)[[2L]]), drop = TRUE]
+    y <- data@pheno[i, getResponse(formula)]
 
     res <- chunkedApply(X = data@geno, MARGIN = 2L, FUN = function(col, ...) {
-        model[, 1L] <- col
-        fm <- stats::lsfit(x = model, y = y, intercept = FALSE)
+        fm <- stats::lsfit(x = cbind(col, model), y = y, intercept = FALSE)
         stats::ls.print(fm, print.it = FALSE)$coef.table[[1L]][1L, ]
     }, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
-    colnames(res) <- colnames(data@geno)[j]
     res <- t(res)
+    rownames(res) <- colnames(data@geno)[j]
 
     return(res)
 }
@@ -115,10 +116,6 @@ GWAS.lsfit <- function(formula, data, i = seq_len(nrow(data@geno)), j = seq_len(
 # groups: a vector mapping markers into groups (can be integer, character or
 # factor)
 GWAS.SKAT <- function(formula, data, groups, i = seq_len(nrow(data@geno)), j = seq_len(ncol(data@geno)), verbose = FALSE, ...) {
-
-    if (!requireNamespace("SKAT", quietly = TRUE)) {
-        stop("SKAT needed for this function to work. Please install it.", call. = FALSE)
-    }
 
     uniqueGroups <- unique(groups)
 
@@ -141,28 +138,8 @@ GWAS.SKAT <- function(formula, data, groups, i = seq_len(nrow(data@geno)), j = s
 }
 
 
-# OLS for the regression y=xb+e (data is assumed to be pre-adjusted by non-genetic effects
-rayOLS <- function(y, x, SSy, Int, n, isNAY) {
-    isNAX <- which(is.na(x))
-    isNAXY <- unique(c(isNAX, isNAY))
-    SSy <- SSy - sum(y[isNAX]^2, na.rm = TRUE)
-    if (length(isNAXY) > 0) {
-        y[isNAXY] <- 0
-        x[isNAXY] <- 0
-    }
-    n<- n-length(isNAXY)
-    # crossprodUCTS
-    sX <- crossprod(Int, x)
-    sY <- crossprod(Int, y)
-    XX <- crossprod(x) - sX * sX / n
-    Xy <- crossprod(x, y) - sX * sY / n
-    # solution and SE
-    sol <- Xy / XX
-    RSS <- SSy - XX * sol^2
-    SE <- sqrt(RSS / (n - 2L) / XX)
-    z_stat <- sol / SE
-    p_val <- stats::pt(q = abs(z_stat), df = n - 2L, lower.tail = FALSE) * 2L
-    return(c(sol, SE, z_stat, p_val))
+rayOLS <- function(x, y) {
+    .Call(C_rayOLS, x, y)
 }
 
 
@@ -185,4 +162,11 @@ getCoefficients.lmerMod <- function(x) {
     ans <- summary(x)$coef[2L, ]
     ans <- c(ans, c(1L - stats::pnorm(ans[3L])))
     return(ans)
+}
+
+getResponse <- function(formula) {
+    # Extract component from parse tree (see https://cran.r-project.org/doc/manuals/r-release/R-lang.html#Language-objects)
+    sym <- formula[[2L]]
+    # Convert symbol to character
+    as.character(sym)
 }

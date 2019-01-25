@@ -1,3 +1,83 @@
+#' Applies a Function on Each Chunk of a File-Backed Matrix.
+#'
+#' Similar to [base::lapply()], but designed for file-backed matrices. The
+#' function brings chunks of an object into physical memory by taking subsets,
+#' and applies a function on them. If `nCores` is greater than 1, the function
+#' will be applied in parallel using [parallel::mclapply()]. In that case the
+#' subsets of the object are taken on the slaves.
+#'
+#' @inheritSection BGData-package File-backed matrices
+#' @inheritSection BGData-package Multi-level parallelism
+#' @param X A file-backed matrix, typically `@@geno` of a [BGData-class]
+#' object.
+#' @param FUN The function to be applied on each chunk.
+#' @param i Indicates which rows of `X` should be used. Can be integer,
+#' boolean, or character. By default, all rows are used.
+#' @param j Indicates which columns of `X` should be used. Can be integer,
+#' boolean, or character. By default, all columns are used.
+#' @param chunkBy Whether to extract chunks by rows (1) or by columns (2).
+#' Defaults to columns (2).
+#' @param chunkSize The number of rows or columns of `X` that are brought into
+#' physical memory for processing per core. If `NULL`, all elements in `i` or
+#' `j` are used. Defaults to 5000.
+#' @param nCores The number of cores (passed to [parallel::mclapply()]).
+#' Defaults to the number of cores as detected by [parallel::detectCores()].
+#' @param verbose Whether progress updates will be posted. Defaults to `FALSE`.
+#' @param ... Additional arguments to be passed to the [base::apply()] like
+#' function.
+#' @example man/examples/chunkedMap.R
+#' @export
+chunkedMap <- function(X, FUN, i = seq_len(nrow(X)), j = seq_len(ncol(X)), chunkBy = 2L, chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE, ...) {
+    if (length(dim(X)) != 2L) {
+        stop("X must be a matrix-like object")
+    }
+    i <- crochet::convertIndex(X, i, "i")
+    j <- crochet::convertIndex(X, j, "j")
+    dim <- c(length(i), length(j))
+    if (is.null(chunkSize)) {
+        chunkSize <- dim[chunkBy]
+        nChunks <- 1L
+    } else {
+        nChunks <- ceiling(dim[chunkBy] / chunkSize)
+    }
+    chunkApply <- function(curChunk, ...) {
+        if (verbose) {
+            if (nCores > 1) {
+                message("Process ", Sys.getpid(), ": Chunk ", curChunk, " of ", nChunks, " ...")
+            } else {
+                message("Chunk ", curChunk, " of ", nChunks, " ...")
+            }
+        }
+        range <- seq(
+            ((curChunk - 1L) * chunkSize) + 1L,
+            min(curChunk * chunkSize, dim[chunkBy])
+        )
+        if (chunkBy == 2L) {
+            chunk <- X[i, j[range], drop = FALSE]
+        } else {
+            chunk <- X[i[range], j, drop = FALSE]
+        }
+        FUN(chunk, ...)
+    }
+    if (nCores == 1L) {
+        res <- lapply(X = seq_len(nChunks), FUN = chunkApply, ...)
+    } else {
+        # Suppress warnings because we are handling errors ourselves
+        res <- suppressWarnings(parallel::mclapply(X = seq_len(nChunks), FUN = chunkApply, ..., mc.cores = nCores)) #
+        errors <- which(sapply(res, class) == "try-error")
+        if (length(errors) > 0L) {
+            # With mc.preschedule = TRUE (the default), if a job fails, the
+            # remaining jobs will fail as well with the same error message.
+            # Therefore, the number of errors does not tell how many errors
+            # actually occurred and we forward only the first error message.
+            errorMessage <- attr(res[[errors[1L]]], "condition")$message
+            stop("in chunk ", errors[1L], " (only first error is shown)", ": ", errorMessage, call. = FALSE)
+        }
+    }
+    return(res)
+}
+
+
 #' Applies a Function on Each Row or Column of a File-Backed Matrix.
 #'
 #' Similar to [base::apply()], but designed for file-backed matrices. The
@@ -29,39 +109,9 @@
 #' @example man/examples/chunkedApply.R
 #' @export
 chunkedApply <- function(X, MARGIN, FUN, i = seq_len(nrow(X)), j = seq_len(ncol(X)), chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE, ...) {
-    if (!length(dim(X))) {
-        stop("dim(X) must have a positive length")
-    }
-    i <- crochet::convertIndex(X, i, "i")
-    j <- crochet::convertIndex(X, j, "j")
-    dimX <- c(length(i), length(j))
-    if (is.null(chunkSize)) {
-        chunkSize <- dimX[MARGIN]
-        nChunks <- 1L
-    } else {
-        nChunks <- ceiling(dimX[MARGIN] / chunkSize)
-    }
-    chunkRanges <- LinkedMatrix:::chunkRanges(dimX[MARGIN], nChunks)
-    chunkApply <- function(chunkNum, ...) {
-        if (verbose) {
-            if (nCores > 1) {
-                message("Process ", Sys.getpid(), ": Chunk ", chunkNum, " of ", nChunks, " ...")
-            } else {
-                message("Chunk ", chunkNum, " of ", nChunks, " ...")
-            }
-        }
-        if (MARGIN == 2L) {
-            chunk <- X[i, j[seq(chunkRanges[1L, chunkNum], chunkRanges[2L, chunkNum])], drop = FALSE]
-        } else {
-            chunk <- X[i[seq(chunkRanges[1L, chunkNum], chunkRanges[2L, chunkNum])], j, drop = FALSE]
-        }
+    res <- chunkedMap(X = X, FUN = function(chunk, ...) {
         apply2(X = chunk, MARGIN = MARGIN, FUN = FUN, ...)
-    }
-    if (nCores == 1L) {
-        res <- lapply(X = seq_len(nChunks), FUN = chunkApply, ...)
-    } else {
-        res <- parallel::mclapply(X = seq_len(nChunks), FUN = chunkApply, ..., mc.cores = nCores)
-    }
+    }, i = i, j = j, chunkBy = MARGIN, chunkSize = chunkSize, nCores = nCores, verbose = verbose, ...)
     simplifyList(res)
 }
 

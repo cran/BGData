@@ -1,3 +1,17 @@
+# BGData 2.1.0
+
+- Add `chunkedMap()` function.
+- Improve error handling in `chunkedMap()` and `chunkedApply()`.
+- `summarize()`: Improve performance.
+- `GWAS()`: Improve performance of `rayOLS` method.
+- `GWAS()`: Fix bug when computing p-values for methods other than rayOLS,
+  lsfit, or SKAT when `i` is used to subset samples.
+- `GWAS()`: Fix wrong results in `lsfit` method when covariates with missing
+  values are used.
+- `as.BGData()`: Fix bug loading .fam and .bim files when path contains the
+  word `bed`.
+
+
 # BGData 2.0.0
 
 ## Breaking Changes
