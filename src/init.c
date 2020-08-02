@@ -1,14 +1,15 @@
-#include <R.h>
-#include <Rinternals.h>
-#include <R_ext/Rdynload.h>
-#include <stdlib.h> // for NULL
+#include "summarize.h"
+#include "rayOLS.h"
+#include "preprocess.h"
+#include "fitLSYS.h"
 
-extern SEXP summarize(SEXP);
-extern SEXP rayOLS(SEXP, SEXP);
+#include <R_ext/Rdynload.h>
 
 static const R_CallMethodDef callMethods[] = {
-    {"C_summarize", (DL_FUNC) &summarize, 1},
-    {"C_rayOLS", (DL_FUNC) &rayOLS, 2},
+    {"summarize", (DL_FUNC) &summarize, 1},
+    {"rayOLS", (DL_FUNC) &rayOLS, 2},
+    {"preprocess", (DL_FUNC) &preprocess, 4},
+    {"fitLSYS", (DL_FUNC) &fitLSYS, 9},
     {NULL, NULL, 0}
 };
 

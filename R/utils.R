@@ -11,7 +11,6 @@ getLineCount <- function(path, header) {
     return(n)
 }
 
-
 getFileHeader <- function(path, sep = "") {
     file <- file(path, open = "r")
     header <- scan(file, nlines = 1L, what = character(), sep = sep, quiet = TRUE)
@@ -19,18 +18,15 @@ getFileHeader <- function(path, sep = "") {
     return(header)
 }
 
-
 getColumnCount <- function(path, sep = "") {
     header <- getFileHeader(path, sep)
     p <- length(header)
     return(p)
 }
 
-
 randomString <- function() {
     paste(sample(c(0L:9L, letters, LETTERS), size = 5L, replace = TRUE), collapse = "")
 }
-
 
 normalizeType <- function(val) {
     type <- typeof(val)
@@ -38,7 +34,7 @@ normalizeType <- function(val) {
     if (type == "character" && length(val) > 0L) {
         # convert to type if type and value match
         convert <- try(vector(mode = val), silent = TRUE)
-        if (class(convert) == "try-error") {
+        if (inherits(convert, "try-error")) {
             # return a character type if conversion failed
             warning("could no convert type, using character instead")
             character()
@@ -52,12 +48,11 @@ normalizeType <- function(val) {
     }
 }
 
-
 loadExample <- function() {
     path <- system.file("extdata", package = "BGData")
-    message("Loading chromosomes as BED files...")
-    m <- do.call(LinkedMatrix::ColumnLinkedMatrix, lapply(c("chr1", "chr2", "chr3"), function(chr) {
-        suppressMessages(BEDMatrix::BEDMatrix(paste0(path, "/", chr)))
+    message("Loading chromosomes as .bed files...")
+    m <- do.call(ColumnLinkedMatrix, lapply(c("chr1", "chr2", "chr3"), function(chr) {
+        suppressMessages(BEDMatrix(paste0(path, "/", chr)))
     }))
     as.BGData(m, alternatePhenotypeFile = paste0(path, "/pheno.txt"))
 }

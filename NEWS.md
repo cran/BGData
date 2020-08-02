@@ -1,3 +1,37 @@
+# BGData 2.2.0
+
+- Follow [Bioconductor S4 practices][1].
+  - If you have used `new()` to create `BGData` instances, please use the
+    `BGData()` constructor function instead.
+  - If you have used `@` to access the slots of `BGData` instances, please use
+    the `geno()`, `pheno()`, and `map()` accessors instead.
+- `BGData()`:
+  - Do not create dimnames for `geno` as this object is likely shared.
+  - Check if `geno` has row names before creating `pheno` stub.
+  - Check if `geno` has column names before creating `map` stub.
+  - Rename `IID` in `pheno` stub to `sample_id`.
+  - Rename `mrk` in `map` stub to `variant_id`.
+  - Change format of rownames for `pheno` stub to a sequence starting with
+    `sample_` and rownames for `map` stub to a sequence starting with
+    `variant_` if `geno` does not have dimnames.
+- `as.BGData()`:
+  - Force column classes when loading .fam and .bim files.
+  - Force `FID` and `IID` columns to be of type `character` when loading
+    alternate phenotype files.
+  - Do not make assumptions about the structure of dimnames of a BEDMatrix
+    object if it is passed without .fam and .bim file unless they are `NULL`.
+- Add validity tests for `BGData` objects:
+  - Check if number of rows of `geno` matches number of rows of `pheno`.
+  - Check if number of columns of `geno` matches number of rows of `map`.
+  - Warn if the row names of `pheno` do not match the row names of `geno`.
+  - Warn if the row names of `map` do not match the column names of `geno`.
+- Add `preprocess()` function for fast centering, scaling, and imputation.
+- `GWAS()`: Return number of records used for each variant and allele
+  frequencies in `rayOLS`.
+- Update citation instructions.
+- Use `inherits(., *)` instead of `class(.) == *` (R4 compat).
+
+
 # BGData 2.1.0
 
 - Add `chunkedMap()` function.
@@ -51,3 +85,5 @@
 # BGData 1.0.0
 
 Initial release.
+
+[1]: https://bioconductor.org/help/course-materials/2017/Zurich/S4-classes-and-methods.html

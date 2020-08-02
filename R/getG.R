@@ -2,46 +2,6 @@ padDigits <- function(x, total) {
     formatC(x, width = as.integer(log10(total) + 1L), format = "d", flag = "0")
 }
 
-
-#' Computes a Genomic Relationship Matrix.
-#'
-#' Computes a positive semi-definite symmetric genomic relation matrix G=XX'
-#' offering options for centering and scaling the columns of `X` beforehand.
-#'
-#' If `center = FALSE`, `scale = FALSE` and `scaleG = FALSE`, [getG()] produces
-#' the same outcome than [base::tcrossprod()].
-#'
-#' @inheritSection BGData-package File-backed matrices
-#' @inheritSection BGData-package Multi-level parallelism
-#' @param X A matrix-like object, typically `@@geno` of a [BGData-class]
-#' object.
-#' @param center Either a logical value or a numeric vector of length equal to
-#' the number of columns of `X`. Numeric vector required if `i2` is used. If
-#' `FALSE`, no centering is done. Defaults to `TRUE`.
-#' @param scale Either a logical value or a numeric vector of length equal to
-#' the number of columns of `X`. Numeric vector required if `i2` is used. If
-#' `FALSE`, no scaling is done. Defaults to `TRUE`.
-#' @param scaleG Whether XX' should be scaled. Defaults to `TRUE`.
-#' @param minVar Columns with variance lower than this value will not be used
-#' in the computation (only if `scale` is not `FALSE`).
-#' @param i Indicates which rows of `X` should be used. Can be integer,
-#' boolean, or character. By default, all rows are used.
-#' @param j Indicates which columns of `X` should be used. Can be integer,
-#' boolean, or character. By default, all columns are used.
-#' @param i2 Indicates which rows should be used to compute a block of the
-#' genomic relationship matrix. Will compute XY' where X is determined by `i`
-#' and `j` and Y by `i2` and `j`. Can be integer, boolean, or character. If
-#' `NULL`, the whole genomic relationship matrix XX' is computed. Defaults to
-#' `NULL`.
-#' @param chunkSize The number of columns of `X` that are brought into physical
-#' memory for processing per core. If `NULL`, all columns of `X` are used.
-#' Defaults to 5000.
-#' @param nCores The number of cores (passed to [parallel::mclapply()]).
-#' Defaults to the number of cores as detected by [parallel::detectCores()].
-#' @param verbose Whether progress updates will be posted. Defaults to `FALSE`.
-#' @return A positive semi-definite symmetric numeric matrix.
-#' @example man/examples/getG.R
-#' @export
 getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, i = seq_len(nrow(X)), j = seq_len(ncol(X)), i2 = NULL, chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE) {
 
     # compute XY' rather than XX'
@@ -56,10 +16,10 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
         }
     }
 
-    i <- crochet::convertIndex(X, i, "i")
-    j <- crochet::convertIndex(X, j, "j")
+    i <- convertIndex(X, i, "i")
+    j <- convertIndex(X, j, "j")
     if (hasY) {
-        i2 <- crochet::convertIndex(X, i2, "i")
+        i2 <- convertIndex(X, i2, "i")
     }
 
     nX <- nrow(X)
@@ -91,12 +51,12 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
     }
 
     if (hasY) {
-        G <- bigmemory::big.matrix(nrow = n, ncol = n2, type = "double", init = 0.0, dimnames = list(rownames(X)[i], rownames(X)[i2]))
+        G <- big.matrix(nrow = n, ncol = n2, type = "double", init = 0.0, dimnames = list(rownames(X)[i], rownames(X)[i2]))
     } else {
-        G <- bigmemory::big.matrix(nrow = n, ncol = n, type = "double", init = 0.0, dimnames = list(rownames(X)[i], rownames(X)[i]))
+        G <- big.matrix(nrow = n, ncol = n, type = "double", init = 0.0, dimnames = list(rownames(X)[i], rownames(X)[i]))
     }
 
-    mutex <- synchronicity::boost.mutex()
+    mutex <- boost.mutex()
 
     chunkApply <- function(curChunk) {
 
@@ -129,7 +89,7 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
 
         # compute scales
         if (is.logical(scale) && scale == TRUE) {
-            scale.chunk <- apply(X = X1, MARGIN = 2L, FUN = stats::sd, na.rm = TRUE)
+            scale.chunk <- apply(X = X1, MARGIN = 2L, FUN = sd, na.rm = TRUE)
         } else if (is.numeric(scale)) {
             scale.chunk <- scale[j[range]]
         } else {
@@ -186,9 +146,9 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
                 G_chunk <- tcrossprod(X1)
             }
 
-            synchronicity::lock(mutex)
+            lock(mutex)
             G[] <- G[] + G_chunk
-            synchronicity::unlock(mutex)
+            unlock(mutex)
 
         }
 
@@ -199,7 +159,7 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
     if (nCores == 1L) {
         res <- lapply(X = seq_len(nChunks), FUN = chunkApply)
     } else {
-        res <- parallel::mclapply(X = seq_len(nChunks), FUN = chunkApply, mc.cores = nCores)
+        res <- mclapply(X = seq_len(nChunks), FUN = chunkApply, mc.cores = nCores)
     }
 
     # Convert big.matrix to matrix
@@ -207,7 +167,7 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
 
     if (scaleG) {
         if (hasY) {
-            K <- do.call(base::sum, res)
+            K <- do.call(sum, res)
         } else {
             # Use seq instead of diag to avoid copy as it does not increase ref count
             K <- mean(G[seq(from = 1L, to = n * n, by = n + 1L)])
@@ -219,52 +179,10 @@ getG <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, 
 
 }
 
-
-#' Computes a Very Large Genomic Relationship Matrix.
-#'
-#' Computes a positive semi-definite symmetric genomic relation matrix G=XX'
-#' offering options for centering and scaling the columns of `X` beforehand.
-#'
-#' Even very large genomic relationship matrices are supported by partitioning
-#' `X` into blocks and calling [getG()] on these blocks. This function performs
-#' the block computations sequentially, which may be slow. In an HPC
-#' environment, performance can be improved by manually distributing these
-#' operations to different nodes.
-#'
-#' @inheritSection BGData-package Multi-level parallelism
-#' @param X A matrix-like object, typically `@@geno` of a [BGData-class]
-#' object.
-#' @param center Either a logical value or a numeric vector of length equal to
-#' the number of columns of `X`. If `FALSE`, no centering is done. Defaults to
-#' `TRUE`.
-#' @param scale Either a logical value or a numeric vector of length equal to
-#' the number of columns of `X`. If `FALSE`, no scaling is done. Defaults to
-#' `TRUE`.
-#' @param scaleG TRUE/FALSE whether xx' must be scaled.
-#' @param minVar Columns with variance lower than this value will not be used
-#' in the computation (only if `scale` is not `FALSE`).
-#' @param blockSize The number of rows and columns of each block. If `NULL`, a
-#' single block of the same length as `i` will be created. Defaults to 5000.
-#' @param folderOut The path to the folder where to save the
-#' [symDMatrix::symDMatrix-class] object. Defaults to a random string prefixed
-#' with "symDMatrix_".
-#' @param vmode vmode of `ff` objects.
-#' @param i Indicates which rows of `X` should be used. Can be integer,
-#' boolean, or character. By default, all rows are used.
-#' @param j Indicates which columns of `X` should be used. Can be integer,
-#' boolean, or character. By default, all columns are used.
-#' @param chunkSize The number of columns of `X` that are brought into physical
-#' memory for processing per core. If `NULL`, all columns of `X` are used.
-#' Defaults to 5000.
-#' @param nCores The number of cores (passed to [parallel::mclapply()]).
-#' Defaults to the number of cores as detected by [parallel::detectCores()].
-#' @param verbose Whether progress updates will be posted. Defaults to `FALSE`.
-#' @return A [symDMatrix::symDMatrix-class] object.
-#' @export
 getG_symDMatrix <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVar = 1e-05, blockSize = 5000L, folderOut = paste0("symDMatrix_", randomString()), vmode = "double", i = seq_len(nrow(X)), j = seq_len(ncol(X)), chunkSize = 5000L, nCores = getOption("mc.cores", 2L), verbose = FALSE) {
 
-    i <- crochet::convertIndex(X, i, "i")
-    j <- crochet::convertIndex(X, j, "j")
+    i <- convertIndex(X, i, "i")
+    j <- convertIndex(X, j, "j")
 
     nX <- nrow(X)
     pX <- ncol(X)
@@ -301,7 +219,7 @@ getG_symDMatrix <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVa
         }
         scale <- rep(1, pX)
         names(scale) <- colnames(X)
-        scale[j] <- chunkedApply(X = X, MARGIN = 2L, FUN = stats::sd, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = FALSE, na.rm = TRUE)
+        scale[j] <- chunkedApply(X = X, MARGIN = 2L, FUN = sd, i = i, j = j, chunkSize = chunkSize, nCores = nCores, verbose = FALSE, na.rm = TRUE)
     }
 
     if (file.exists(folderOut)) {
@@ -327,19 +245,19 @@ getG_symDMatrix <- function(X, center = TRUE, scale = TRUE, scaleG = TRUE, minVa
             }
             if (colIndex >= rowIndex) {
                 blockName <- paste0("data_", padDigits(rowIndex, nBlocks), "_", padDigits(colIndex, nBlocks), ".bin")
-                block <- ff::as.ff(getG(X, center = center, scale = scale, scaleG = FALSE, minVar = minVar, i = blockIndices[[rowIndex]], j = j, i2 = blockIndices[[colIndex]], chunkSize = chunkSize, nCores = nCores, verbose = FALSE), filename = paste0(folderOut, "/", blockName), vmode = vmode)
+                block <- as.ff(getG(X, center = center, scale = scale, scaleG = FALSE, minVar = minVar, i = blockIndices[[rowIndex]], j = j, i2 = blockIndices[[colIndex]], chunkSize = chunkSize, nCores = nCores, verbose = FALSE), filename = paste0(folderOut, "/", blockName), vmode = vmode)
                 # Change ff path to a relative one
-                bit::physical(block)$filename <- blockName
+                physical(block)[["filename"]] <- blockName
                 rowArgs[[colIndex]] <- block
                 counter <- counter + 1L
             } else {
-                rowArgs[[colIndex]] <- ff::vt(args[[colIndex]][[rowIndex]])
+                rowArgs[[colIndex]] <- vt(args[[colIndex]][[rowIndex]])
             }
         }
-        args[[rowIndex]] <- do.call(LinkedMatrix::ColumnLinkedMatrix, rowArgs)
+        args[[rowIndex]] <- do.call(ColumnLinkedMatrix, rowArgs)
     }
 
-    G <- do.call(symDMatrix::symDMatrix, args)
+    G <- do.call(symDMatrix, args)
 
     if (scaleG) {
         K <- mean(diag(G))
