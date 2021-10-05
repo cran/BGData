@@ -5,9 +5,12 @@ testPath <- paste0(tempdir(), "/BGData-", BGData:::randomString(), "/")
 dir.create(testPath)
 
 restoreGenotypes <- function() {
-    genotypes <- matrix(c(4, 4, 4, 3, 2, 3, 1, 2, 1), nrow = nRows, ncol = nCols)
-    colnames(genotypes) <- paste0("mrk_", 1:3)
-    rownames(genotypes) <- paste0("1_", 1:3)
+    set.seed(4711)
+    data <- sample(c(1, 2, 3, 4), size = nRows * nCols, replace = TRUE)
+    set.seed(NULL)
+    genotypes <- matrix(data = data, nrow = nRows, ncol = nCols)
+    rownames(genotypes) <- paste0("1_", seq_len(nRows))
+    colnames(genotypes) <- paste0("mrk_", seq_len(nCols))
     return(genotypes)
 }
 
@@ -48,6 +51,18 @@ test_that("it checks if the number of rows of geno match with the number of rows
 test_that("it checks if the number of rows of geno match with the number of rows of pheno", {
     map <- data.frame(mrk = colnames(genotypes))
     expect_error(BGData(geno = genotypes, map = map[-1, ]))
+})
+
+test_that("it checks if the rownames of geno are unique", {
+    rownames(genotypes) <- c("1_1", "1_2", "1_2")
+    expect_error(BGData(geno = genotypes))
+    genotypes <- restoreGenotypes()
+})
+
+test_that("it checks if the colnames of geno are unique", {
+    colnames(genotypes) <- c("mrk_1", "mrk_2", "mrk_2")
+    expect_error(BGData(geno = genotypes))
+    genotypes <- restoreGenotypes()
 })
 
 test_that("it warns if the row names of pheno do not match the row names of geno", {

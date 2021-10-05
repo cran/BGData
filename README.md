@@ -1,13 +1,12 @@
 BGData: A Suite of Packages for Analysis of Big Genomic Data
 ============================================================
 
-[![CRAN_Status_Badge](http://www.r-pkg.org/badges/version/BGData)](https://CRAN.R-project.org/package=BGData)
-[![Rdoc](http://www.rdocumentation.org/badges/version/BGData)](http://www.rdocumentation.org/packages/BGData)
+[![CRAN_Status_Badge](https://www.r-pkg.org/badges/version/BGData)](https://CRAN.R-project.org/package=BGData)
 [![Travis-CI Build Status](https://travis-ci.org/QuantGen/BGData.svg?branch=master)](https://travis-ci.org/QuantGen/BGData)
 [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/8xac0jfmwhrj0gc3?svg=true)](https://ci.appveyor.com/project/agrueneberg/bgdata)
 [![Coverage status](https://codecov.io/gh/QuantGen/BGData/branch/master/graph/badge.svg)](https://codecov.io/github/QuantGen/BGData?branch=master)
 
-BGData is an R package that provides scalable and efficient computational methods for large genomic datasets, e.g., genome-wide association studies (GWAS) or genomic relationship matrices (G matrices). It also contains a container class called `BGData` that holds genotypes, sample information, and variant information.
+BGData ([Grueneberg & de los Campos, 2019](https://www.g3journal.org/content/9/5/1377)) is an R package that provides scalable and efficient computational methods for large genomic datasets, e.g., genome-wide association studies (GWAS) or genomic relationship matrices (G matrices). It also contains a container class called `BGData` that holds genotypes, sample information, and variant information.
 
 Modern genomic datasets are big (large *n*), high-dimensional (large *p*), and multi-layered. The challenges that need to be addressed are memory requirements and computational demands. Our goal is to develop software that will enable researchers to carry out analyses with big genomic data within the R environment.
 
@@ -35,7 +34,7 @@ library(BGData)
 
 ### Inspecting the example dataset
 
-The `inst/extdata` folder contains example files that were generated from the 250k SNP and phenotype data in [Atwell et al. (2010)](http://www.nature.com/nature/journal/v465/n7298/full/nature08800.html). Only the first 300 SNPs of chromosome 1, 2, and 3 were included to keep the size of the example dataset small enough for CRAN. [PLINK](https://www.cog-genomics.org/plink2) was used to convert the data to [.bed](https://www.cog-genomics.org/plink2/input#bed) and [.raw](https://www.cog-genomics.org/plink2/input#raw) files. `FT10` has been chosen as a phenotype and is provided as an [alternate phenotype file](https://www.cog-genomics.org/plink2/input#pheno). The file is intentionally shuffled to demonstrate that the additional phenotypes are put in the same order as the rest of the phenotypes.
+The `inst/extdata` folder contains example files that were generated from the 250k SNP and phenotype data in [Atwell et al. (2010)](https://doi.org/10.1038/nature08800). Only the first 300 SNPs of chromosome 1, 2, and 3 were included to keep the size of the example dataset small enough for CRAN. [PLINK](https://www.cog-genomics.org/plink2) was used to convert the data to [.bed](https://www.cog-genomics.org/plink2/input#bed) and [.raw](https://www.cog-genomics.org/plink2/input#raw) files. `FT10` has been chosen as a phenotype and is provided as an [alternate phenotype file](https://www.cog-genomics.org/plink2/input#pheno). The file is intentionally shuffled to demonstrate that the additional phenotypes are put in the same order as the rest of the phenotypes.
 
 ```R
 path <- system.file("extdata", package = "BGData")
@@ -210,7 +209,7 @@ remotes::install_github("QuantGen/BGData")
 Documentation
 -------------
 
-Further documentation can be found on [RDocumentation](http://www.rdocumentation.org/packages/BGData).
+Further documentation can be found on [RDocumentation](https://www.rdocumentation.org/packages/BGData).
 
 
 Contributing

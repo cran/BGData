@@ -1,3 +1,16 @@
+# BGData 2.3.0
+
+- Add `segments()` function for finding non-overlapping segments based on a
+  summary statistic.
+- `preprocess()`: Add `nCores` parameter.
+- `findRelated()`: Map indices to sample names for matrix inputs.
+- `getG()`: Add `impute` parameter.
+- `getG()`: Impute by mean instead of 0 if `center = FALSE`.
+- `getG()`: Use `preprocess()` internally for better performance.
+- `as.BGData()`: Read genetic distances in .bim file as double instead of
+  integer.
+
+
 # BGData 2.2.0
 
 - Follow [Bioconductor S4 practices][1].
