@@ -1,3 +1,8 @@
+# BGData 2.4.0
+
+- Add `FWD()` function for performing forward regressions.
+
+
 # BGData 2.3.0
 
 - Add `segments()` function for finding non-overlapping segments based on a
